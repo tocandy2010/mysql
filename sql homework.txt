@@ -1,0 +1,71 @@
+﻿0. 每個辦公室的業績狀況表
+
+    select e.officecode,sum(tmp.total)as t from customers as c 
+    join employees as e on c.salesRepEmployeeNumber = e.employeeNumber 
+    join (select o.customerNumber,o.orderNumber,sum(od.quantityordered * od.priceeach) as total 
+    from orderdetails as od join orders as o on o.ordernumber = od.ordernumber where status = 'shipped' 
+    group by o.orderNumber) as tmp on tmp.customerNumber = c.customerNumber 
+    group by officecode order by t desc;
+
+    ////使用 procedure 
+    DELIMITER $$
+    CREATE DEFINER=`root`@`localhost` PROCEDURE `opr`()
+    NO SQL
+    BEGIN
+
+    select e.officecode,sum(tmp.total)as t from customers as c 
+    join employees as e on c.salesRepEmployeeNumber = e.employeeNumber 
+    join (select o.customerNumber,o.orderNumber,sum(od.quantityordered * od.priceeach) as total 
+    from orderdetails as od join orders as o on o.ordernumber = od.ordernumber where status = 'shipped' 
+    group by o.orderNumber) as tmp on tmp.customerNumber = c.customerNumber 
+    group by officecode order by t desc;
+    
+    end$$
+    DELIMITER ;
+
+
+1. 業務業績排行榜, procedure  (要加時間區間,只能算shipped的)
+    select e.employeeNumber,concat(e.firstName,e.lastName),sum(od.quantityordered*priceEach)as total from employees as e 
+    join customers as c on employeeNumber = c.salesRepEmployeeNumber 
+    join orders as o on c.customerNumber = o.customerNumber 
+    join orderdetails as od on o.orderNumber = od.orderNumber 
+    where year(o.shippedDate) = 2003 && o.status = 'shipped' 
+    group by employeeNumber 
+    order by total desc;
+
+
+2. 熱銷商品排行榜, procedure  
+    select od.productCode,p.productname,p.buyprice ,sum(od.quantityOrdered)as count  from orderdetails as od
+    join products as p on p.productCode = od.productCode
+    group by productCode order by count desc 
+
+
+3. 業務訂單取消的比例 orders.sttaus = canceled
+    select e.employeeNumber,concat(e.firstname,e.lastName)as name,concat(round((count(status)/count(employeeNumber)*100),2),'%')as cancel from employees as e 
+    left join customers as c on c.salesRepEmployeeNumber = e.employeeNumber 
+    left join (select customerNumber,status from orders where status = 'Cancelled') as o on o.customerNumber = c.customerNumber 
+    group by employeeNumber 
+    order by e.employeenumber desc
+
+4. 低於商品建議售價MSRP的訂單及其實際售價95%
+    select p.productName,o.orderNumber,p.MSRP,od.priceEach from orderdetails as od 
+    join products as p on p.productCode = od.productCode 
+    join orders as o on o.orderNumber = od.orderNumber
+    where (p.MSRP*0.95)>od.priceEach  order by p.productName
+
+
+5. 當訂單資料被修改及刪除的時候記錄在 log 資料表中, 時間及所有資料欄位
+
+訂單刪除之前紀錄
+CREATE TRIGGER `ordersdelete` BEFORE DELETE ON `orders`
+FOR EACH ROW begin 
+insert into ordersdlogs (`orderNumber`, `orderDate`, `requiredDate`, `shippedDate`, `status`, `comments`, `customerNumber`, `otime`)
+values(OLD.orderNumber, OLD.orderDate, OLD.requiredDate, OLD.shippedDate, OLD.status, OLD.comments, OLD.customerNumber,now());
+end
+
+訂單修改之前紀錄
+CREATE TRIGGER `ordersupdate` BEFORE UPDATE ON `orders`
+FOR EACH ROW begin 
+insert into ordersulogs (`orderNumber`, `orderDate`, `requiredDate`, `shippedDate`, `status`, `comments`, `customerNumber`, `otime`)
+values(OLD.orderNumber, OLD.orderDate, OLD.requiredDate, OLD.shippedDate, OLD.status, OLD.comments, OLD.customerNumber,now());
+end
